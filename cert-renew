@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# user settings
+LOG_FILE="/var/log/letsencrypt/renew.log"
+APP_FOLDER="/var/www/king_of_20_production/current"
+RENEW_CMD="sudo certbot -q renew"
+MSG_FAIL="RENEWAL FAILURE"
+MSG_SUCCESS="RENEWAL SUCCESS"
+
+CUR_TIME=$(date)
+
+sudo chgrp -R ssl-cert /var/log/letsencrypt
+sudo chmod -R g=rwx /var/log/letsencrypt/
+
+# go to app folder
+cd $APP_FOLDER
+
+# make sure apache will restart ok
+rvmsudo passenger status
+TEST_STATUS=$?
+if [ "$TEST_STATUS" != 0 ]; then
+        echo "$MSG_FAIL rvmsudo passenger status $CUR_TIME" >> $LOG_FILE
+        exit 1
+fi
+
+# certbot needs control of :80
+rvmsudo passenger stop
+
+# send both stderr & stdout to logfile
+# this is important b/c sometimes there's useful debug info
+# in stdout during errors
+$RENEW_CMD &>> $LOG_FILE
+RENEW_STATUS=$?
+
+rvmsudo passenger start
+
+# even though it's already logging verbosely,
+# make it easier to grep for the outcome
+if [ "$RENEW_STATUS" != 0 ]; then
+        echo "$MSG_FAIL $CUR_TIME" >> $LOG_FILE
+else
+        echo "$MSG_SUCCESS $CUR_TIME" >> $LOG_FILE
+fi
+
+sudo chgrp -R ssl-cert /etc/letsencrypt
+sudo chmod -R g=rwx /etc/letsencrypt
+
+exit $RENEW_STATUS
